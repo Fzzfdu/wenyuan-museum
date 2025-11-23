@@ -10,7 +10,6 @@ import speech_recognition as sr
 from gtts import gTTS               
 import pygame                      
 import tempfile
-import streamlit.components.v1 as components
 
 st.set_page_config(page_title="文渊博物馆智能导览", page_icon="🖼")
 load_dotenv()
@@ -78,81 +77,50 @@ if uploaded_file is not None:
         st.success("识别结果：")
         st.markdown(result)
 # ===== 第2天：语音输入 + 女声播报 =====
-# ===== 云端语音输入（Web Speech API，Streamlit Cloud 完美支持）=====
-st.markdown("### 🎤 语音问我（浏览器自动识别）")
+# ===== 云端语音输入模拟版（零 JS，Streamlit Cloud 零报错）=====
+st.markdown("### 🎤 语音问我（输入文字模拟语音）")
 
-if st.button("🎤 点我说话", key="web_voice"):
-    st.write("请允许浏览器访问麦克风...")
+# 简单文本输入（模拟语音识别结果）
+voice_text = st.text_input("语音识别结果（输入你想说的话）", placeholder="说一句'利簋是谁造的？'试试")
+
+if voice_text:
+    st.success(f"我听到你说：{voice_text}")
     
-    # JavaScript 代码（浏览器内置语音识别，无需 pyaudio）
-    js_code = '''
-    <script>
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-        recognition.lang = 'zh-CN';
-        recognition.interimResults = false;
-        recognition.maxAlternatives = 1;
-        
-        recognition.onresult = function(event) {
-            const transcript = event.results[0][0].transcript;
-            parent.postMessage({type: 'streamlit:setComponentValue', value: transcript}, '*');
-        };
-        recognition.onerror = function(event) {
-            parent.postMessage({type: 'streamlit:setComponentValue', value: '识别失败: ' + event.error}, '*');
-        };
-        recognition.start();
-    } else {
-        st.write("请用 Chrome 或 Edge 浏览器");
-    }
-    </script>
-    '''
-    st.components.v1.html(js_code, height=0)
-    
-    # 接收结果（用 session_state 监听）
-    if 'voice_result' not in st.session_state:
-        st.session_state.voice_result = ''
-    
-    voice_text = st.text_input("识别结果（自动填入）", value=st.session_state.voice_result, key="voice_output")
-    
-    if voice_text and voice_text != '识别失败: ':
-        st.success(f"我听到你说：{voice_text}")
-        
-        # 直接触发多智能体回答（用 voice_text 替换 prompt）
-        with st.chat_message("user"):
-            st.markdown(voice_text)
-        with st.chat_message("assistant"):
-            with st.spinner("3位AI导游正在讨论..."):
-                # 你的检索 + 多智能体代码（保持不变）
-                query_vec = embedder.encode([voice_text], normalize_embeddings=True)
-                D, I = index.search(query_vec, k=3)
-                context = "\n\n".join([f"【资料{i+1}】\n{docs[i]}" for i, idx in enumerate(I[0])])
-                
-                expert = client.chat.completions.create(
-                    model="qwen-max",
-                    messages=[{"role": "user", "content": f"资料：{context}\n问题：{voice_text}\n请专业讲解："}],
-                    temperature=0.3
-                ).choices[0].message.content
-                
-                story = client.chat.completions.create(
-                    model="qwen-max",
-                    messages=[{"role": "system", "content": "你是一个会讲睡前故事的导游"},
-                              {"role": "user", "content": f"讲成故事：{expert}"}],
-                    temperature=0.7
-                ).choices[0].message.content
-                
-                english = client.chat.completions.create(
-                    model="qwen-max",
-                    messages=[{"role": "user", "content": f"翻译成英文：{expert}"}],
-                    temperature=0.3
-                ).choices[0].message.content
-                
-                final_answer = f"**专业讲解：**\n{expert}\n\n**故事版：**\n{story}\n\n**English：**\n{english}"
-                st.markdown(final_answer)
-                
-                # 女声播报（你已有的终极版）
-                play_tts_final(final_answer)
-        
-        st.session_state.voice_result = ''  # 清空
+    # 直接触发多智能体回答（用 voice_text 替换 prompt）
+    with st.chat_message("user"):
+        st.markdown(voice_text)
+    with st.chat_message("assistant"):
+        with st.spinner("3位AI导游正在讨论..."):
+            # 你的检索代码（保持不变）
+            query_vec = embedder.encode([voice_text], normalize_embeddings=True)
+            D, I = index.search(query_vec, k=3)
+            context = "\n\n".join([f"【资料{i+1}】\n{docs[i]}" for i, idx in enumerate(I[0])])
+            
+            # 多智能体回答（保持不变）
+            expert = client.chat.completions.create(
+                model="qwen-max",
+                messages=[{"role": "user", "content": f"资料：{context}\n问题：{voice_text}\n请专业讲解："}],
+                temperature=0.3
+            ).choices[0].message.content
+            
+            story = client.chat.completions.create(
+                model="qwen-max",
+                messages=[{"role": "system", "content": "你是一个会讲睡前故事的导游"},
+                          {"role": "user", "content": f"讲成故事：{expert}"}],
+                temperature=0.7
+            ).choices[0].message.content
+            
+            english = client.chat.completions.create(
+                model="qwen-max",
+                messages=[{"role": "user", "content": f"翻译成英文：{expert}"}],
+                temperature=0.3
+            ).choices[0].message.content
+            
+            final_answer = f"**专业讲解：**\n{expert}\n\n**故事版：**\n{story}\n\n**English：**\n{english}"
+            st.markdown(final_answer)
+            
+            # 女声播报（你已有的终极版，保持不变）
+            play_tts_final(final_answer)
 st.caption("已加载展品数量："+str(len(docs))+" 件  │  模型：通义千问 Qwen-Max")
 
 if "messages" not in st.session_state:

@@ -6,4 +6,3 @@ sentence-transformers
 python-dotenv
 edge-tts
 pygame
-streamlit-components
