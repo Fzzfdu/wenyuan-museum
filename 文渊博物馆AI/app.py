@@ -6,7 +6,6 @@ from openai import OpenAI, AsyncOpenAI
 import streamlit as st
 from PIL import Image
 import base64, io
-import speech_recognition as sr  
 from gtts import gTTS               
 import pygame                      
 import tempfile
