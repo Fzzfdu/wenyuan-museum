@@ -1,0 +1,7 @@
+streamlit>=1.31.0
+openai
+dashscope
+faiss-cpu
+sentence-transformers
+python-dotenv
+edge-tts
