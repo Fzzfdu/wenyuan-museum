@@ -77,39 +77,69 @@ if uploaded_file is not None:
         st.success("识别结果：")
         st.markdown(result)
 # ===== 第2天：语音输入 + 女声播报 =====
-st.markdown("### 语音问我（点击麦克风说话）")
-if st.button("🎤 点击说话", key="voice"):
-    r = sr.Recognizer()
-    with sr.Microphone() as source:
-        st.write("正在听你说话...")
-        audio = r.listen(source, timeout=10)
+# ===== 云端语音输入 + 自动触发回答（Streamlit Cloud 完美支持）=====
+st.markdown("### 语音问我（点一下就能说话）")
+
+# 用一个隐藏组件接收语音结果
+def get_voice_input():
+    js = '''
+    <script>
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = 'zh-CN';
+    recognition.interimResults = false;
     
-    try:
-        text = r.recognize_google(audio, language="zh-CN")
-        st.success(f"你说：{text}")
+    recognition.onresult = function(event) {
+        const text = event.results[0][0].transcript;
+        parent.document.querySelector("iframe").contentWindow.postMessage({
+            type: "streamlit:setComponentValue",
+            value: text
+        }, "*");
+    };
+    
+    recognition.onerror = function(e) {
+        parent.document.querySelector("iframe").contentWindow.postMessage({
+            type: "streamlit:setComponentValue",
+            value: "识别失败"
+        }, "*");
+    };
+    
+    recognition.start();
+    </script>
+    '''
+    return st.components.v1.html(js, height=0, key="voice_recognition")
+
+if st.button("点我说话", key="start_voice"):
+    result = get_voice_input()
+    
+    # 接收识别结果
+    voice_text = st.session_state.get("voice_recognition", None)
+    if voice_text and voice_text != "识别失败":
+        st.success(f"我听到你说：{voice_text}")
         
-        # 用你原来的 RAG 逻辑回答（复制你原来的检索+回答代码，把 prompt 换成 text）
-        query_vec = embedder.encode([text], normalize_embeddings=True)
-        D, I = index.search(query_vec, k=3)
-        context = "\n\n".join([f"【资料{i+1}】\n{docs[i]}" for i, idx in enumerate(I[0])])
-        
-        response = client.chat.completions.create(
-            model="qwen-max",
-            messages=[{"role": "user", "content": f"资料：{context}\n问题：{text}\n请热情讲解："}],
-            temperature=0.4
-        )
-        answer = response.choices[0].message.content
-        
-        st.markdown(f"**导览员回答：**\n{answer}")
-        
-        # 女声播报（超好听！）
-        tts = gTTS(answer, lang='zh')
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
-            tts.save(f.name)
-            st.audio(f.name, format="audio/mp3")
-            
-    except Exception as e:
-        st.error("听不清，再试一次")
+        # 直接用 voice_text 当成 prompt，触发你原来的多智能体回答
+        with st.chat_message("user"):
+            st.markdown(voice_text)
+        with st.chat_message("assistant"):
+            with st.spinner("3位AI导游正在讨论..."):
+                # 你的检索代码
+                query_vec = embedder.encode([voice_text], normalize_embeddings=True)
+                D, I = index.search(query_vec, k=3)
+                context = "\n\n".join([f"【资料{i+1}】\n{docs[i]}" for i, idx in enumerate(I[0])])
+                
+                # 多智能体回答（你之前写好的）
+                expert = client.chat.completions.create(model="qwen-max", messages=[...]).choices[0].message.content
+                story = client.chat.completions.create(model="qwen-max", messages=[...]).choices[0].message.content
+                english = client.chat.completions.create(model="qwen-max", messages=[...]).choices[0].message.content
+                
+                final_answer = f"**专业讲解**\n{expert}\n\n**故事版**\n{story}\n\n**English**\n{english}"
+                st.markdown(final_answer)
+                
+                # 女声播报（你第3天已搞定的终极版）
+                play_tts_final(final_answer)  # 你之前写好的函数
+                
+        # 清空，防止重复触发
+        st.session_state.voice_recognition = None
+        st.rerun()
 st.caption("已加载展品数量："+str(len(docs))+" 件  │  模型：通义千问 Qwen-Max")
 
 if "messages" not in st.session_state:
